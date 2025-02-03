@@ -38,7 +38,7 @@ mkdir -p /etc/shadowsocks
 # 使用cat命令生成配置文件避免转义问题
 cat > $CONFIG_FILE << EOF
 {
-    "server": "::",
+    "server": "0.0.0.0",
     "server_port": 8000,
     "password": "qwertyuiop222",
     "timeout": 300,
