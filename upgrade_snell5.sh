@@ -161,12 +161,12 @@ show_status() {
         log_info "新版本: $NEW_VERSION"
     fi
     
-    # 显示端口监听状态
+    # 显示端口监听状态,套了一层shadow-tls端口为45632
     log_info "端口监听检查:"
     if command -v ss >/dev/null 2>&1; then
-        ss -tuln | grep :8005 || log_warn "端口 8005 未在监听"
+        ss -tuln | grep :45632 || log_warn "端口 45632 未在监听"
     elif command -v netstat >/dev/null 2>&1; then
-        netstat -tuln | grep :8005 || log_warn "端口 8005 未在监听"
+        netstat -tuln | grep :45632 || log_warn "端口 45632 未在监听"
     fi
 }
 
