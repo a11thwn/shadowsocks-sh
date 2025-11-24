@@ -55,7 +55,7 @@ download_snell() {
     cd "$TEMP_DIR"
     
     # 下载 Snell5
-    if wget -q --show-progress https://dl.nssurge.com/snell/snell-server-v5.0.0-linux-amd64.zip; then
+    if wget -q --show-progress https://dl.nssurge.com/snell/snell-server-v5.0.1-linux-amd64.zip; then
         log_info "Snell5 下载完成"
     else
         log_error "Snell5 下载失败"
