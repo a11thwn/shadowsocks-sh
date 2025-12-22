@@ -575,11 +575,21 @@ web_camouflage() {
     rm -rf $web_dir
     mkdir -p $web_dir
     cd $web_dir || exit
-    websites[0]="https://github.com/h31105/LodeRunner_TotalRecall.git"
-    websites[1]="https://github.com/h31105/adarkroom.git"
-    websites[2]="https://github.com/h31105/webosu"
+    
+    # 伪装网站列表（子目录名）
+    websites=("LodeRunner_TotalRecall" "adarkroom" "webosu")
     selectedwebsite=${websites[$RANDOM % ${#websites[@]}]}
-    git clone ${selectedwebsite} web_camouflage
+    
+    echo -e "${OK} ${GreenBG} 正在下载伪装网站: ${selectedwebsite} ${Font}"
+    
+    # 克隆仓库（只取最新版本，减少下载量）
+    git clone --depth 1 --filter=blob:none --sparse https://github.com/a11thwn/shadowsocks-sh.git /tmp/shadowsocks-sh-temp
+    cd /tmp/shadowsocks-sh-temp
+    git sparse-checkout set websites/${selectedwebsite}
+    cp -r websites/${selectedwebsite} ${web_dir}/web_camouflage
+    rm -rf /tmp/shadowsocks-sh-temp
+    cd $web_dir
+    
     judge "WebSite 伪装"
 }
 
@@ -842,17 +852,17 @@ upgrade_tsp() {
 update_sh() {
     command -v curl >/dev/null 2>&1 || ${INS} install curl
     judge "安装依赖包 curl"
-    ol_version=$(curl -L -s https://raw.githubusercontent.com/h31105/trojan_v2_docker_onekey/${github_branch}/deploy.sh | grep "shell_version=" | head -1 | awk -F '=|"' '{print $3}')
+    ol_version=$(curl -L -s https://raw.githubusercontent.com/a11thwn/shadowsocks-sh/${github_branch}/deploy.sh | grep "shell_version=" | head -1 | awk -F '=|"' '{print $3}')
     echo "$ol_version" >$version_cmp
     echo "$shell_version" >>$version_cmp
     if [[ "$shell_version" < "$(sort -rV $version_cmp | head -1)" ]]; then
         echo -e "${OK} ${GreenBG} 更新内容：${Font}"
-        echo -e "${Yellow}$(curl --silent https://api.github.com/repos/h31105/trojan_v2_docker_onekey/releases/latest | grep body | head -n 1 | awk -F '"' '{print $4}')${Font}"
+        echo -e "${Yellow}$(curl --silent https://api.github.com/repos/a11thwn/shadowsocks-sh/releases/latest | grep body | head -n 1 | awk -F '"' '{print $4}')${Font}"
         echo -e "${OK} ${GreenBG} 存在新版本，是否更新 (Y/N) [N]? ${Font}"
         read -r update_confirm
         case $update_confirm in
         [yY][eE][sS] | [yY])
-            wget -N --no-check-certificate https://raw.githubusercontent.com/h31105/trojan_v2_docker_onekey/${github_branch}/deploy.sh
+            wget -N --no-check-certificate https://raw.githubusercontent.com/a11thwn/shadowsocks-sh/${github_branch}/deploy.sh
             echo -e "${OK} ${GreenBG} 更新完成，请重新运行脚本：\n#./deploy.sh ${Font}"
             exit 0
             ;;
