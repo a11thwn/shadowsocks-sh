@@ -355,17 +355,22 @@ if [[ -f "${SB_CERT_DIR}/server.crt" ]]; then
 fi
 
 # 添加 cron 定时任务
-# 每周一凌晨 3 点执行
-CRON_JOB="0 3 * * 1 $RENEW_SCRIPT >> /var/log/sing-box-renew.log 2>&1"
-(crontab -l 2>/dev/null | grep -v "$RENEW_SCRIPT"; echo "$CRON_JOB") | crontab -
-echo "[OK] 定时任务已添加（每周一 03:00 执行）"
+# 每周一凌晨 3 点执行证书续期检查
+CRON_JOB_RENEW="0 3 * * 1 $RENEW_SCRIPT >> /var/log/sing-box-renew.log 2>&1"
+# 每月 1 号凌晨 2:26 重启服务器
+CRON_JOB_REBOOT="26 2 1 * * /sbin/reboot"
+
+# 处理 crontab 为空的情况，并添加两个定时任务
+( crontab -l 2>/dev/null || echo "" ) | grep -v "$RENEW_SCRIPT" | grep -v "/sbin/reboot" | { cat; echo "$CRON_JOB_RENEW"; echo "$CRON_JOB_REBOOT"; } | crontab -
+echo "[OK] 定时任务已添加："
+echo "     • 每周一 03:00 执行证书续期检查"
+echo "     • 每月 1 号 02:26 自动重启服务器"
 
 echo
 echo "==========================================="
-echo "📋 证书续期说明："
-echo "  • 每周一凌晨 03:00 自动执行续期检查"
-echo "  • 脚本会重启 TSP 触发 Let's Encrypt 续期"
-echo "  • 然后重启 sing-box 加载最新证书"
-echo "  • 日志位置: /var/log/sing-box-renew.log"
-echo "  • 手动执行: $RENEW_SCRIPT"
+echo "📋 定时任务说明："
+echo "  • 每周一 03:00 - 证书续期检查（重启 TSP + sing-box）"
+echo "  • 每月 1 号 02:26 - 自动重启服务器"
+echo "  • 续期日志: /var/log/sing-box-renew.log"
+echo "  • 手动执行续期: $RENEW_SCRIPT"
 echo "==========================================="
