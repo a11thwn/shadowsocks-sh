@@ -290,7 +290,65 @@ TPL
   ss -lntp | egrep ":${BACKEND_PORT}|sing-box" || true
 }
 
+detect_existing() {
+  if command -v sing-box >/dev/null 2>&1 || \
+     systemctl list-unit-files | grep -q '^sing-box.service'; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+uninstall_singbox() {
+  echo "⚠️ 将执行完全卸载 sing-box / AnyTLS"
+  read -rp "确认卸载？这会删除配置和证书 [y/N]: " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "❌ 已取消卸载"
+    exit 0
+  fi
+
+  systemctl stop sing-box 2>/dev/null || true
+  systemctl disable sing-box 2>/dev/null || true
+  rm -f /etc/systemd/system/sing-box.service
+  systemctl daemon-reload
+
+  rm -rf /etc/sing-box
+  rm -f /usr/local/bin/sing-box
+
+  echo "✅ sing-box 已完全卸载"
+}
+
+
+
 main() {
+  if detect_existing; then
+  echo "⚠️ 检测到系统中已存在 sing-box / AnyTLS"
+  echo "请选择操作："
+  echo "  1) 退出（不做任何修改）【默认】"
+  echo "  2) 重新部署（保留程序，仅覆盖配置）"
+  echo "  3) 完全卸载后重新安装"
+  read -rp "请选择 [1/2/3]: " action
+  action="${action:-1}"
+
+  case "$action" in
+    1)
+      echo "👋 已退出，未做任何修改"
+      exit 0
+      ;;
+    2)
+      echo "♻️ 将覆盖配置并重启服务"
+      systemctl stop sing-box 2>/dev/null || true
+      ;;
+    3)
+      uninstall_singbox
+      ;;
+    *)
+      echo "❌ 无效选择，退出"
+      exit 1
+      ;;
+  esac
+fi
+
   need_root
   install_deps
   install_singbox
