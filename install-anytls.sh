@@ -5,7 +5,11 @@
 # - Auto: systemd .path watches cert/key changes -> restart sing-box
 # - Auto: cron weekly check: if cert expires within 30 days -> restart TSP
 #
-# Tested assumptions:
+# Defaults requested:
+# - AnyTLS password default: qwertyuiop222 (press Enter to accept)
+# - Surge output includes: skip-cert-verify=false
+#
+# Paths:
 # - TSP config: /etc/tls-shunt-proxy/config.yaml
 # - TSP cert dir (deployX default): /etc/ssl/tls-shunt-proxy/certificates/acme-v02.api.letsencrypt.org-directory
 # - sing-box bin: /usr/local/bin/sing-box
@@ -22,6 +26,7 @@ SBOX_CFG="/etc/sing-box/config.json"
 SBOX_BIN="/usr/local/bin/sing-box"
 
 SBOX_PORT_DEFAULT="5443"
+DEFAULT_PASS="qwertyuiop222"
 
 # From deployX.sh (h31105) default:
 TSP_CERT_DIR="/etc/ssl/tls-shunt-proxy/certificates/acme-v02.api.letsencrypt.org-directory"
@@ -53,17 +58,16 @@ prompt_inputs() {
     exit 1
   fi
 
-  read -rp "请输入 AnyTLS 密码（Surge 用）: " PASS
+  read -rp "请输入 AnyTLS 密码（默认 ${DEFAULT_PASS}，直接回车）: " PASS
+  PASS="$(echo "${PASS:-}" | xargs)"
   if [[ -z "$PASS" ]]; then
-    echo -e "${ERR} 密码不能为空"
-    exit 1
+    PASS="$DEFAULT_PASS"
   fi
 }
 
 # Return 0 if port is free, 1 if occupied
 port_free() {
   local p="$1"
-  # match ":PORT " in LISTEN
   if ss -lntp 2>/dev/null | grep -qE ":[[:space:]]*$p\\b|:$p[[:space:]]"; then
     return 1
   fi
@@ -170,7 +174,6 @@ find_tsp_cert() {
     exit 1
   fi
 
-  # Prefer fullchain if present; otherwise any matching cert
   CERT_PATH="$(find "$TSP_CERT_DIR" -type f \( -iname "*${DOMAIN}*fullchain*.pem" -o -iname "*${DOMAIN}*fullchain*.crt" -o -name "${DOMAIN}.crt" -o -name "${DOMAIN}.pem" -o -name "*${DOMAIN}*.crt" -o -name "*${DOMAIN}*.pem" \) 2>/dev/null | head -n 1 || true)"
   KEY_PATH="$(find "$TSP_CERT_DIR" -type f \( -name "${DOMAIN}.key" -o -name "*${DOMAIN}*.key" -o -iname "*${DOMAIN}*privkey*.pem" \) 2>/dev/null | head -n 1 || true)"
 
@@ -351,7 +354,7 @@ print_surge_line() {
   echo "======================"
   echo "Surge 节点（推荐写法）"
   echo "======================"
-  echo "hk3-anytls 🇭🇰 = anytls, $DOMAIN, 443, password=$PASS, tls=true, sni=$DOMAIN, alpn=h2"
+  echo "hk3-anytls 🇭🇰 = anytls, $DOMAIN, 443, password=$PASS, tls=true, sni=$DOMAIN, alpn=h2, skip-cert-verify=false"
   echo
 }
 
@@ -382,7 +385,7 @@ main() {
 
   prompt_inputs
 
-  # Choose backend port
+  # Choose backend port (default 5443, auto-find if occupied)
   if port_free "$SBOX_PORT_DEFAULT"; then
     SBOX_PORT="$SBOX_PORT_DEFAULT"
   else
@@ -395,16 +398,16 @@ main() {
   ensure_tsp_config
   restart_tsp
 
-  # Important: cert may not exist until ACME completes; this will fail-fast with guidance
+  # Cert may not exist until ACME completes; fail-fast with guidance if missing
   find_tsp_cert
 
   write_singbox_config
   ensure_singbox_service
 
-  # Guarantee: cert file changes -> restart sing-box
+  # Guarantee: cert/key changes -> restart sing-box
   install_cert_watcher
 
-  # Add: cron weekly check: if cert expires within 30 days -> restart TSP
+  # Cron weekly check: if cert expires within 30 days -> restart TSP
   install_tsp_renew_check_script
   setup_cron_job
 
