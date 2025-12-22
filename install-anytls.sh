@@ -286,3 +286,86 @@ echo "📲 Surge 节点配置："
 echo "hk-anytls 🇭🇰 = anytls, ${DOMAIN}, 443, password=${PASSWORD}, tls=true, sni=${DOMAIN}, alpn=h2, skip-cert-verify=false"
 echo
 echo "==========================================="
+
+### ===== 12. 设置证书续期定时任务 =====
+echo "[INFO] 设置证书续期定时任务..."
+
+# 创建证书续期检查脚本
+RENEW_SCRIPT="/etc/sing-box/renew-cert.sh"
+cat >"$RENEW_SCRIPT" <<'RENEW_EOF'
+#!/bin/bash
+# sing-box + TSP 证书续期检查脚本
+# 功能：
+#   1. 重启 TSP 触发证书续期检查
+#   2. 检测证书变化后重启 sing-box
+
+LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
+CERT_FILE="/etc/sing-box/cert/server.crt"
+HASH_FILE="/etc/sing-box/cert/.cert_hash"
+
+echo "$LOG_PREFIX 开始证书续期检查..."
+
+# 1. 重启 TSP 触发证书续期
+echo "$LOG_PREFIX 重启 tls-shunt-proxy 触发证书续期检查..."
+systemctl restart tls-shunt-proxy
+sleep 5
+
+# 检查 TSP 是否正常运行
+if ! systemctl is-active tls-shunt-proxy &>/dev/null; then
+    echo "$LOG_PREFIX [ERROR] tls-shunt-proxy 重启失败！"
+    exit 1
+fi
+echo "$LOG_PREFIX [OK] tls-shunt-proxy 已重启"
+
+# 2. 获取当前证书的哈希值
+if [[ -f "$CERT_FILE" ]]; then
+    CURRENT_HASH=$(md5sum "$CERT_FILE" 2>/dev/null | awk '{print $1}')
+else
+    echo "$LOG_PREFIX [WARN] 证书文件不存在: $CERT_FILE"
+    exit 1
+fi
+
+# 3. 读取上次的哈希值
+if [[ -f "$HASH_FILE" ]]; then
+    LAST_HASH=$(cat "$HASH_FILE")
+else
+    LAST_HASH=""
+fi
+
+# 4. 比较哈希值，决定是否重启 sing-box
+if [[ "$CURRENT_HASH" != "$LAST_HASH" ]]; then
+    echo "$LOG_PREFIX 检测到证书更新，重启 sing-box..."
+    systemctl restart sing-box
+    echo "$CURRENT_HASH" > "$HASH_FILE"
+    echo "$LOG_PREFIX [OK] sing-box 已重启，新证书已加载"
+else
+    echo "$LOG_PREFIX [OK] 证书未变化，重启 sing-box 确保正常运行..."
+    systemctl restart sing-box
+fi
+
+echo "$LOG_PREFIX 证书续期检查完成"
+RENEW_EOF
+
+chmod +x "$RENEW_SCRIPT"
+echo "[OK] 证书续期脚本已创建: $RENEW_SCRIPT"
+
+# 保存初始证书哈希
+if [[ -f "${SB_CERT_DIR}/server.crt" ]]; then
+    md5sum "${SB_CERT_DIR}/server.crt" | awk '{print $1}' > "${SB_CERT_DIR}/.cert_hash"
+fi
+
+# 添加 cron 定时任务
+# 每周一凌晨 3 点执行
+CRON_JOB="0 3 * * 1 $RENEW_SCRIPT >> /var/log/sing-box-renew.log 2>&1"
+(crontab -l 2>/dev/null | grep -v "$RENEW_SCRIPT"; echo "$CRON_JOB") | crontab -
+echo "[OK] 定时任务已添加（每周一 03:00 执行）"
+
+echo
+echo "==========================================="
+echo "📋 证书续期说明："
+echo "  • 每周一凌晨 03:00 自动执行续期检查"
+echo "  • 脚本会重启 TSP 触发 Let's Encrypt 续期"
+echo "  • 然后重启 sing-box 加载最新证书"
+echo "  • 日志位置: /var/log/sing-box-renew.log"
+echo "  • 手动执行: $RENEW_SCRIPT"
+echo "==========================================="
