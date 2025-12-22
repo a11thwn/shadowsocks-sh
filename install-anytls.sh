@@ -15,6 +15,7 @@ echo "====== AnyTLS + TSP 安装（deployX 原味流程） ======"
 if ! ss -lntp '( sport = :443 )' | grep -q tls-shunt-proxy; then
   echo "[FATAL] 443 端口未被 tls-shunt-proxy 占用"
   echo "请先手工安装并启动 tls-shunt-proxy"
+  echo "脚本地址（修改版）：https://raw.githubusercontent.com/a11thwn/shadowsocks-sh/refs/heads/master/deploy.sh"
   exit 1
 fi
 echo "[OK] 443 已由 tls-shunt-proxy 占用"
