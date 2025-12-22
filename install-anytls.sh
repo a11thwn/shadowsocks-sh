@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-### ===== 基本变量 =====
 CERT_BASE="/etc/ssl/tls-shunt-proxy/certificates/acme-v02.api.letsencrypt.org-directory"
 SB_BIN="/usr/local/bin/sing-box"
 SB_CONF="/etc/sing-box/config.json"
@@ -10,50 +9,40 @@ SB_SERVICE="/etc/systemd/system/sing-box.service"
 DEFAULT_PASSWORD="qwertyuiop222"
 PORT_START=5443
 
-echo "====== AnyTLS + TSP 一键部署 ======"
+echo "====== AnyTLS + TSP 一键部署（deployX 逻辑版） ======"
 
-### ===== 1. 校验 443 必须被 tls-shunt-proxy 占用 =====
+### 1. 校验 443 必须被 TSP 占用
 if ! ss -lntp '( sport = :443 )' | grep -q tls-shunt-proxy; then
-  echo "[FATAL] 443 端口未被 tls-shunt-proxy 占用，脚本终止。"
-  echo "请先手工安装并启动 tls-shunt-proxy。"
+  echo "[FATAL] 443 未被 tls-shunt-proxy 占用，退出"
   exit 1
 fi
-echo "[OK] 确认 443 由 tls-shunt-proxy 占用"
 
-### ===== 2. 读取参数 =====
+### 2. 输入参数
 read -rp "请输入 AnyTLS 域名（例如 yourdomain.com）: " DOMAIN
-if [[ -z "$DOMAIN" ]]; then
-  echo "[FATAL] 域名不能为空"
-  exit 1
-fi
+[[ -z "$DOMAIN" ]] && { echo "[FATAL] 域名不能为空"; exit 1; }
 
-read -rp "请输入 AnyTLS 密码（默认 ${DEFAULT_PASSWORD}，直接回车）: " PASSWORD
+read -rp "请输入 AnyTLS 密码（默认 ${DEFAULT_PASSWORD}，回车）: " PASSWORD
 PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
 
-### ===== 3. 选择可用端口 =====
+### 3. 选择后端端口
 PORT=$PORT_START
 while ss -lnt "( sport = :$PORT )" | grep -q LISTEN; do
   PORT=$((PORT+1))
 done
-echo "[OK] 使用 sing-box 后端端口: $PORT"
+echo "[OK] 使用后端端口: $PORT"
 
-### ===== 4. 重装 sing-box =====
-echo "[INFO] 安装 / 重装 sing-box..."
+### 4. 重装 sing-box
 systemctl stop sing-box 2>/dev/null || true
 rm -f "$SB_BIN"
-
 curl -fsSL https://sing-box.app/install.sh | bash
-command -v sing-box >/dev/null || { echo "[FATAL] sing-box 安装失败"; exit 1; }
 
 mkdir -p /etc/sing-box "$SB_CERT_DIR"
 
-### ===== 5. 修改 TSP 配置 =====
+### 5. 修改 TSP vhost
 TSP_CONF="/etc/tls-shunt-proxy/config.yaml"
 cp "$TSP_CONF" "${TSP_CONF}.bak.$(date +%s)"
-echo "[OK] 已备份 $TSP_CONF"
 
 if grep -q "name: ${DOMAIN}" "$TSP_CONF"; then
-  echo "[OK] 已找到 vhost: ${DOMAIN}，修正为 AnyTLS 透传模式"
   sed -i "/name: ${DOMAIN}/,/^[^ ]/c\\
   - name: ${DOMAIN}\n\
     tlsoffloading: false\n\
@@ -64,7 +53,6 @@ if grep -q "name: ${DOMAIN}" "$TSP_CONF"; then
       handler: proxyPass\n\
       args: 127.0.0.1:${PORT}" "$TSP_CONF"
 else
-  echo "[OK] 新增 vhost: ${DOMAIN}"
   cat >>"$TSP_CONF" <<EOF
 
   - name: ${DOMAIN}
@@ -79,9 +67,19 @@ EOF
 fi
 
 systemctl restart tls-shunt-proxy
-echo "[OK] tls-shunt-proxy 已重启"
+echo "[OK] TSP 已重启"
 
-### ===== 6. 等待证书生成 =====
+### ⭐ 6. 主动触发 ACME（deployX 核心）
+echo "[INFO] 主动触发一次 TLS SNI 握手以启动 ACME..."
+timeout 5 bash -c "
+  echo | openssl s_client \
+    -connect 127.0.0.1:443 \
+    -servername ${DOMAIN} \
+    -alpn h2 \
+    >/dev/null 2>&1
+" || true
+
+### 7. 等待证书生成
 CERT_DIR="${CERT_BASE}/${DOMAIN}"
 echo "[INFO] 等待证书生成（最多 120 秒）..."
 for i in {1..120}; do
@@ -92,16 +90,15 @@ for i in {1..120}; do
   sleep 1
 done
 
-if [[ ! -f "${CERT_DIR}/fullchain.pem" ]]; then
-  echo "[FATAL] 未检测到证书生成，请检查："
-  echo "journalctl -u tls-shunt-proxy -n 200 --no-pager | grep -i acme"
+[[ ! -f "${CERT_DIR}/fullchain.pem" ]] && {
+  echo "[FATAL] 证书仍未生成，请检查 TSP ACME 日志"
   exit 1
-fi
+}
 
 ln -sf "${CERT_DIR}/fullchain.pem" "${SB_CERT_DIR}/server.crt"
 ln -sf "${CERT_DIR}/privkey.pem"   "${SB_CERT_DIR}/server.key"
 
-### ===== 7. 写 sing-box 配置 =====
+### 8. 写 sing-box 配置
 cat >"$SB_CONF" <<EOF
 {
   "log": { "level": "info" },
@@ -121,15 +118,13 @@ cat >"$SB_CONF" <<EOF
       }
     }
   ],
-  "outbounds": [
-    { "type": "direct" }
-  ]
+  "outbounds": [ { "type": "direct" } ]
 }
 EOF
 
 sing-box check -c "$SB_CONF"
 
-### ===== 8. systemd 服务 =====
+### 9. systemd
 cat >"$SB_SERVICE" <<EOF
 [Unit]
 Description=sing-box AnyTLS Service
@@ -147,15 +142,14 @@ EOF
 systemctl daemon-reload
 systemctl enable --now sing-box
 
-### ===== 9. 证书 30 天内到期才重启 TSP =====
-CRON="/etc/cron.d/tsp-cert-renew"
-cat >"$CRON" <<EOF
+### 10. 证书 30 天内到期才重启
+cat >/etc/cron.d/tsp-cert-renew <<EOF
 0 6 * * * root \
 openssl x509 -checkend \$((30*86400)) -noout -in ${CERT_DIR}/fullchain.pem || \
 (systemctl restart tls-shunt-proxy && systemctl restart sing-box)
 EOF
 
-echo "====== 完成 ======"
 echo
-echo "Surge 节点配置："
+echo "====== 部署完成 ======"
+echo "Surge 节点："
 echo "hk3-anytls 🇭🇰 = anytls, ${DOMAIN}, 443, password=${PASSWORD}, tls=true, sni=${DOMAIN}, alpn=h2, skip-cert-verify=false"
