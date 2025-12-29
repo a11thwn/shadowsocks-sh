@@ -43,7 +43,7 @@ fi
 # 创建新配置文件（移除 plugin 相关配置）
 cat > $CONFIG_FILE << EOF
 {
-    "server": "0.0.0.0",
+    "server": "127.0.0.1",
     "server_port": 45632,
     "password": "qwertyuiop222",
     "timeout": 300,
