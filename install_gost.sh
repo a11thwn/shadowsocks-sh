@@ -29,7 +29,7 @@ sudo bash -c 'cat > /etc/gost/config.json <<EOF
 {
     "Retries": 0,
     "ServeNodes": [
-        "socks5://:5000"
+        "socks5://admin:admin@:5000"
     ]
 }
 EOF'
@@ -65,6 +65,7 @@ echo "=========================================="
 if sudo systemctl is-active --quiet gost; then
     echo -e "\033[32m安装成功！GOST 正在运行中。\033[0m"
     echo "监听详情: SOCKS5 代理地址为 0.0.0.0:5000"
+    echo "认证信息: admin / admin"
 else
     echo -e "\033[31m安装失败，请检查 journalctl -u gost 日志。\033[0m"
 fi
