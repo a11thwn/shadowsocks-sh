@@ -175,6 +175,24 @@ fi
 NEW_HASH=$(md5sum "$CERT_FILE" 2>/dev/null | awk '{print $1}')
 echo "$NEW_HASH" > "${SB_CERT_DIR}/.cert_hash"
 
+# ===== 10. 替换服务器上旧的续期脚本 + 修复 cron =====
+INSTALLED_SCRIPT="/etc/sing-box/renew-anytls-cert.sh"
+OLD_SCRIPT="/etc/sing-box/renew-cert.sh"
+SELF="$(readlink -f "$0")"
+
+cp "$SELF" "$INSTALLED_SCRIPT"
+chmod +x "$INSTALLED_SCRIPT"
+log "[OK] 已部署续期脚本到 $INSTALLED_SCRIPT"
+
+if [[ -f "$OLD_SCRIPT" ]]; then
+  rm -f "$OLD_SCRIPT"
+  log "[OK] 已删除旧的无效续期脚本: $OLD_SCRIPT"
+fi
+
+CRON_JOB="0 3 * * 1 $INSTALLED_SCRIPT >> /var/log/sing-box-renew.log 2>&1"
+( crontab -l 2>/dev/null || echo "" ) | grep -v "renew-cert.sh" | grep -v "renew-anytls-cert.sh" | { cat; echo "$CRON_JOB"; } | crontab -
+log "[OK] cron 已更新，每周一 03:00 执行续期"
+
 log "===== 续期完成 ====="
 log "域名: $DOMAIN"
 log "证书: $CERT_FILE"
