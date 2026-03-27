@@ -75,9 +75,21 @@ cp "$TSP_CONF" "${TSP_CONF}.bak.$(date +%s)"
 log "[OK] 已备份 TSP 配置"
 
 # ===== 4. 回滚函数 =====
+set_tls_offloading() {
+  local domain="$1" value="$2" conf="$3"
+  python3 -c "
+import re, sys
+domain, value, conf = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(conf) as f: content = f.read()
+pattern = rf'(- name: {re.escape(domain)}.*?)(tlsoffloading: (?:true|false))'
+content = re.sub(pattern, rf'\1tlsoffloading: {value}', content, count=1, flags=re.DOTALL)
+with open(conf, 'w') as f: f.write(content)
+" "$domain" "$value" "$conf"
+}
+
 rollback() {
   log "[ROLLBACK] 恢复 TSP 透传模式..."
-  sed -i "s/tlsoffloading: true/tlsoffloading: false/" "$TSP_CONF"
+  set_tls_offloading "$DOMAIN" "false" "$TSP_CONF"
   systemctl restart tls-shunt-proxy 2>/dev/null || true
   systemctl restart sing-box 2>/dev/null || true
 }
@@ -99,7 +111,7 @@ if [[ -f "$CERT_FILE" ]] && ! openssl x509 -checkend 0 -noout -in "$CERT_FILE" 2
   rm -f "${TSP_CERT_DIR}/${DOMAIN}/${DOMAIN}.key"
 fi
 
-sed -i "s/tlsoffloading: false/tlsoffloading: true/" "$TSP_CONF"
+set_tls_offloading "$DOMAIN" "true" "$TSP_CONF"
 systemctl restart tls-shunt-proxy
 sleep 3
 
@@ -147,7 +159,7 @@ log "[OK] 新证书有效，过期时间: $NEW_EXPIRY"
 
 # ===== 8. 切回透传模式 =====
 log "切回 TSP 透传模式..."
-sed -i "s/tlsoffloading: true/tlsoffloading: false/" "$TSP_CONF"
+set_tls_offloading "$DOMAIN" "false" "$TSP_CONF"
 systemctl restart tls-shunt-proxy
 sleep 2
 
