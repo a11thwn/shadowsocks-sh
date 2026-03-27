@@ -176,13 +176,15 @@ NEW_HASH=$(md5sum "$CERT_FILE" 2>/dev/null | awk '{print $1}')
 echo "$NEW_HASH" > "${SB_CERT_DIR}/.cert_hash"
 
 # ===== 10. 替换服务器上旧的续期脚本 + 修复 cron =====
+trap - ERR
+
 INSTALLED_SCRIPT="/etc/sing-box/renew-anytls-cert.sh"
 OLD_SCRIPT="/etc/sing-box/renew-cert.sh"
-SELF="$(readlink -f "$0")"
+REPO_URL="https://raw.githubusercontent.com/a11thwn/shadowsocks-sh/master/renew-anytls-cert.sh"
 
-cp "$SELF" "$INSTALLED_SCRIPT"
+curl -fsSL "$REPO_URL" -o "$INSTALLED_SCRIPT"
 chmod +x "$INSTALLED_SCRIPT"
-log "[OK] 已部署续期脚本到 $INSTALLED_SCRIPT"
+log "[OK] 已从 GitHub 部署续期脚本到 $INSTALLED_SCRIPT"
 
 if [[ -f "$OLD_SCRIPT" ]]; then
   rm -f "$OLD_SCRIPT"
